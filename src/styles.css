@@ -2441,7 +2441,14 @@ body::after {
     radial-gradient(circle at 50% 38%, rgba(24, 199, 190, 0.28), transparent 22%),
     radial-gradient(circle at 50% 50%, rgba(10, 92, 142, 0.34), transparent 34%),
     linear-gradient(135deg, #061525 0%, #08243a 48%, #06131f 100%);
-  animation: launch-exit 1.65s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.45s ease;
+}
+
+.launch-screen.is-exiting {
+  opacity: 0;
+  visibility: hidden;
 }
 
 .launch-screen::before {
@@ -2557,17 +2564,6 @@ body::after {
   animation: launch-bar 1.08s ease-out both;
 }
 
-@keyframes launch-exit {
-  0%, 72% {
-    opacity: 1;
-    visibility: visible;
-  }
-  100% {
-    opacity: 0;
-    visibility: hidden;
-  }
-}
-
 @keyframes launch-core {
   0% {
     opacity: 0;
@@ -2617,7 +2613,7 @@ body::after {
 }
 
 .app-layout {
-  animation: app-enter 0.78s cubic-bezier(0.22, 1, 0.36, 1) 0.8s both;
+  animation: app-enter 0.78s cubic-bezier(0.22, 1, 0.36, 1) 1.05s both;
 }
 
 @keyframes app-enter {

@@ -631,6 +631,7 @@ function Field({ label, value, onChange, placeholder, multiline = false }) {
 }
 
 function App() {
+  const [showLaunch, setShowLaunch] = useState(true);
   const [state, setState] = useState(loadState);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -670,6 +671,11 @@ function App() {
     language: '',
     error: ''
   });
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShowLaunch(false), 1850);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     saveState(state);
@@ -1581,7 +1587,7 @@ function App() {
 
   return (
     <main className="app">
-      <div className="launch-screen" aria-hidden="true">
+      <div className={`launch-screen ${showLaunch ? 'is-visible' : 'is-exiting'}`} aria-hidden="true">
         <div className="launch-orbit">
           <span />
           <span />
