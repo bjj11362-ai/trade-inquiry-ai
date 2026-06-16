@@ -104,9 +104,9 @@ const statuses = ['待处理', '待发送', '已自动回复', '待跟进', '客
 const statusLabels = {
   待处理: '待处理',
   待发送: '待发送',
-  已报价: '已回复待客户',
-  已自动回复: '已回复待客户',
-  待跟进: '已回复待客户',
+  已报价: '已报价，待客户确认',
+  已自动回复: '已自动回复，待客户回复',
+  待跟进: '待跟进客户',
   客户已回复: '客户已回复',
   风险核查: '风险核查',
   人工核查: '风险核查',
@@ -1014,7 +1014,7 @@ function App() {
   const boardBuckets = useMemo(() => {
     const configs = [
       { id: 'new', label: '新询盘', hint: '待处理的新线索' },
-      { id: 'waiting', label: '已回复待客户', hint: '已报价或自动跟进中' },
+      { id: 'waiting', label: '已回复，待客户回复', hint: '已报价或自动跟进中' },
       { id: 'replied', label: '客户已回复', hint: '需要你接手' },
       { id: 'risk', label: '风险核查', hint: '风险、失败或低意向' },
       { id: 'silent', label: '已沉默', hint: '超过周期未回复' }
@@ -2273,7 +2273,7 @@ function App() {
           <select value={state.leadFilter} onChange={(event) => setLeadFilter(event.target.value)}>
             <option value="all">全部线索</option>
             <option value="new">新询盘</option>
-            <option value="waiting">已回复待客户</option>
+            <option value="waiting">已回复，待客户回复</option>
             <option value="replied">客户已回复</option>
             <option value="risk">风险核查</option>
             <option value="二次风险升级">二次风险升级</option>
