@@ -1,19 +1,42 @@
 const { app, BrowserWindow, Menu, shell, dialog, ipcMain } = require('electron');
 const { spawn } = require('node:child_process');
 const http = require('node:http');
+const net = require('node:net');
 const path = require('node:path');
 
-const PORT = Number(process.env.PORT || 8787);
-const APP_URL = `http://127.0.0.1:${PORT}`;
+const START_PORT = Number(process.env.PORT || 8787);
+let apiPort = START_PORT;
+let appUrl = `http://127.0.0.1:${apiPort}`;
 let mainWindow;
 let serverProcess;
 let ownsServer = false;
+let lastServerError = '';
 
-function requestHealth(timeout = 800) {
+function setApiPort(port) {
+  apiPort = port;
+  appUrl = `http://127.0.0.1:${apiPort}`;
+}
+
+function requestHealth(port = apiPort, timeout = 800) {
   return new Promise((resolve) => {
-    const req = http.get(`${APP_URL}/api/health`, (res) => {
-      res.resume();
-      resolve(res.statusCode >= 200 && res.statusCode < 500);
+    let body = '';
+    const req = http.get(`http://127.0.0.1:${port}/api/health`, (res) => {
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        body += chunk;
+      });
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          resolve(false);
+          return;
+        }
+        try {
+          const parsed = JSON.parse(body);
+          resolve(parsed && parsed.ok === true);
+        } catch {
+          resolve(false);
+        }
+      });
     });
     req.on('error', () => resolve(false));
     req.setTimeout(timeout, () => {
@@ -21,6 +44,25 @@ function requestHealth(timeout = 800) {
       resolve(false);
     });
   });
+}
+
+function canListen(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port);
+  });
+}
+
+async function chooseApiPort() {
+  for (let port = START_PORT; port < START_PORT + 40; port += 1) {
+    if (await requestHealth(port, 450)) return port;
+    if (await canListen(port)) return port;
+  }
+  throw new Error(`No available local API port found from ${START_PORT} to ${START_PORT + 39}.`);
 }
 
 function resolveAppRoot() {
@@ -33,16 +75,17 @@ function resolveServerEntry() {
     : path.join(resolveAppRoot(), 'server', 'index.js');
 }
 
-async function waitForHealth(retries = 80) {
+async function waitForHealth(retries = 160) {
   for (let attempt = 0; attempt < retries; attempt += 1) {
-    if (await requestHealth()) return true;
+    if (await requestHealth(apiPort, 1000)) return true;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   return false;
 }
 
 async function ensureServer() {
-  if (await requestHealth()) return;
+  setApiPort(await chooseApiPort());
+  if (await requestHealth(apiPort)) return;
 
   const appRoot = resolveAppRoot();
   const serverEntry = resolveServerEntry();
@@ -53,13 +96,19 @@ async function ensureServer() {
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
-      PORT: String(PORT),
+      PORT: String(apiPort),
       TRADE_AI_DATA_DIR: dataDir
     },
-    stdio: app.isPackaged ? 'ignore' : 'inherit',
+    stdio: app.isPackaged ? ['ignore', 'ignore', 'pipe'] : 'inherit',
     windowsHide: true
   });
   ownsServer = true;
+
+  if (serverProcess.stderr) {
+    serverProcess.stderr.on('data', (chunk) => {
+      lastServerError = String(chunk).slice(-1200);
+    });
+  }
 
   serverProcess.on('exit', (code) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -68,7 +117,7 @@ async function ensureServer() {
   });
 
   if (!(await waitForHealth())) {
-    throw new Error('Local API service did not start in time.');
+    throw new Error(`Local API service did not start in time on port ${apiPort}.${lastServerError ? `\n\n${lastServerError}` : ''}`);
   }
 }
 
@@ -79,7 +128,7 @@ function createWindow() {
     minWidth: 1180,
     minHeight: 760,
     backgroundColor: '#08111f',
-    title: '外贸 AI 询盘工作台',
+    title: 'Trade Inquiry AI',
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
@@ -96,48 +145,48 @@ function createWindow() {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith(APP_URL)) return { action: 'allow' };
+    if (url.startsWith(appUrl)) return { action: 'allow' };
     shell.openExternal(url);
     return { action: 'deny' };
   });
 
-  mainWindow.loadURL(APP_URL);
+  mainWindow.loadURL(appUrl);
 }
 
 function installMenu() {
   const template = [
     {
-      label: '文件',
+      label: 'File',
       submenu: [
-        { label: '刷新', accelerator: 'CmdOrCtrl+R', click: () => mainWindow?.reload() },
+        { label: 'Reload', accelerator: 'CmdOrCtrl+R', click: () => mainWindow?.reload() },
         { type: 'separator' },
-        { label: '退出', role: 'quit' }
+        { label: 'Exit', role: 'quit' }
       ]
     },
     {
-      label: '视图',
+      label: 'View',
       submenu: [
-        { label: '放大', role: 'zoomIn' },
-        { label: '缩小', role: 'zoomOut' },
-        { label: '重置缩放', role: 'resetZoom' },
+        { label: 'Zoom In', role: 'zoomIn' },
+        { label: 'Zoom Out', role: 'zoomOut' },
+        { label: 'Reset Zoom', role: 'resetZoom' },
         { type: 'separator' },
-        { label: '全屏', role: 'togglefullscreen' }
+        { label: 'Full Screen', role: 'togglefullscreen' }
       ]
     },
     {
-      label: '帮助',
+      label: 'Help',
       submenu: [
         {
-          label: '打开项目目录',
+          label: 'Open Data Folder',
           click: () => shell.openPath(app.getPath('userData'))
         },
         {
-          label: '关于',
+          label: 'About',
           click: () => dialog.showMessageBox(mainWindow, {
             type: 'info',
-            title: '外贸 AI 询盘工作台',
-            message: `外贸 AI 询盘工作台 ${app.getVersion()}`,
-            detail: '本地运行，支持邮箱自动化、风控评分、客户线索库和报价单生成。'
+            title: 'Trade Inquiry AI',
+            message: `Trade Inquiry AI ${app.getVersion()}`,
+            detail: 'Local desktop workspace for mailbox automation, risk scoring, customer leads, and quotation generation.'
           })
         }
       ]
@@ -155,7 +204,10 @@ app.whenReady()
     createWindow();
   })
   .catch((error) => {
-    dialog.showErrorBox('启动失败', `${error.message}\n\n请确认端口 ${PORT} 未被异常占用，然后重新打开应用。`);
+    dialog.showErrorBox(
+      'Startup failed',
+      `${error.message}\n\nPlease close other Trade Inquiry AI windows and try again. If the problem continues, restart Windows once.`
+    );
     app.quit();
   });
 
