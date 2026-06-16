@@ -1,6 +1,9 @@
 import 'dotenv/config';
 import express from 'express';
 import { Worker } from 'node:worker_threads';
+import path from 'node:path';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { analyzeInquiry } from './analyzer.js';
 import { deleteMailLead, getLeadQuotationPdf, getMailStatus, reprocessMailQueueItem, sendLeadReply, syncMailbox, testMailConnection, updateMailLeadStatus } from './mailService.js';
 import { createQuotationPdfBuffer } from './pdf.js';
@@ -11,6 +14,8 @@ import { translateCustomerText, translateReplyDraft } from './translator.js';
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const distDir = path.resolve(__dirname, '..', 'dist');
 const mailWorkerState = {
   running: false,
   startedAt: '',
@@ -226,6 +231,13 @@ app.post('/api/mail/queue/:id/reprocess', async (req, res) => {
     res.status(error.status || 500).json({ error: 'Queue reprocess failed.', detail: error.message });
   }
 });
+
+if (existsSync(distDir)) {
+  app.use(express.static(distDir));
+  app.get(/^(?!\/api(?:\/|$)).*/, (_req, res) => {
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
+}
 
 app.listen(port, () => {
   startMailWorker();

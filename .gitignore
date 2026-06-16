@@ -9,3 +9,5 @@ docx_work/
 docx_work5/
 complete_report5.py
 fix_report4_formulas.py
+release/
+.data-test-desktop/

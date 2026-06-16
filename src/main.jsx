@@ -510,6 +510,45 @@ function rowsToProducts(rows) {
     .filter((product) => product.name || product.sku);
 }
 
+function parseCsvRows(text) {
+  const rows = [];
+  let cell = '';
+  let row = [];
+  let quoted = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (char === '"' && quoted && next === '"') {
+      cell += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === ',' && !quoted) {
+      row.push(cell);
+      cell = '';
+    } else if ((char === '\n' || char === '\r') && !quoted) {
+      if (char === '\r' && next === '\n') index += 1;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else {
+      cell += char;
+    }
+  }
+
+  if (cell || row.length) {
+    row.push(cell);
+    rows.push(row);
+  }
+
+  const header = (rows.shift() || []).map((item) => String(item || '').trim());
+  return rows
+    .filter((items) => items.some((item) => String(item || '').trim()))
+    .map((items) => Object.fromEntries(header.map((key, index) => [key, items[index] || ''])));
+}
+
 function buildQuotationText(result) {
   if (!result) return '';
   const customer = getCustomerName(result);
@@ -1015,10 +1054,29 @@ function App() {
     setImportNotice('');
     try {
       const buffer = await file.arrayBuffer();
-      const XLSX = await import('xlsx');
-      const workbook = XLSX.read(buffer, { type: 'array' });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      let rows = [];
+      if (/\.csv$/i.test(file.name)) {
+        rows = parseCsvRows(new TextDecoder('utf-8').decode(buffer));
+      } else {
+        const ExcelJS = await import('exceljs');
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(buffer);
+        const sheet = workbook.worksheets[0];
+        const header = [];
+        sheet.getRow(1).eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          header[colNumber - 1] = String(cell.value || '').trim();
+        });
+        sheet.eachRow((row, rowNumber) => {
+          if (rowNumber === 1) return;
+          const item = {};
+          header.forEach((key, index) => {
+            if (!key) return;
+            const value = row.getCell(index + 1).value;
+            item[key] = typeof value === 'object' && value?.text ? value.text : value ?? '';
+          });
+          rows.push(item);
+        });
+      }
       const imported = rowsToProducts(rows);
       if (!imported.length) {
         setImportNotice('未识别到产品行，请确认表格包含产品名或 SKU。');
@@ -1412,7 +1470,7 @@ function App() {
 
   async function exportQuotationWorkbook() {
     if (!state.result) return;
-    const XLSX = await import('xlsx');
+    const ExcelJS = await import('exceljs');
     const current = state.result;
     const customer = current.customer || {};
     const requirements = current.requirements || {};
@@ -1456,20 +1514,36 @@ function App() {
       ['Internal notes', current.internalNotes || '']
     );
 
-    const worksheet = XLSX.utils.aoa_to_sheet(rows);
-    worksheet['!cols'] = [
-      { wch: 8 },
-      { wch: 42 },
-      { wch: 18 },
-      { wch: 18 },
-      { wch: 16 },
-      { wch: 42 }
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Quotation');
+    worksheet.addRows(rows);
+    worksheet.columns = [
+      { width: 8 },
+      { width: 42 },
+      { width: 18 },
+      { width: 18 },
+      { width: 16 },
+      { width: 42 }
     ];
-    worksheet['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } }];
+    worksheet.mergeCells(1, 1, 1, 6);
+    worksheet.getRow(1).font = { bold: true, size: 16 };
+    worksheet.getRow(9).font = { bold: true };
+    worksheet.eachRow((row) => {
+      row.eachCell((cell) => {
+        cell.alignment = { vertical: 'middle', wrapText: true };
+      });
+    });
 
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Quotation');
-    XLSX.writeFile(workbook, `${safeFilename(getCustomerName(current))}-quotation.xlsx`);
+    const output = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([output], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${safeFilename(getCustomerName(current))}-quotation.xlsx`;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   const result = state.result;
