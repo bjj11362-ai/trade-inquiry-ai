@@ -50,11 +50,14 @@
     },
     "nsis": {
       "artifactName": "${productName}-${version}-Setup-${arch}.${ext}",
+      "shortcutName": "Trade Inquiry AI",
+      "uninstallDisplayName": "Trade Inquiry AI",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false
     },
     "portable": {
       "artifactName": "${productName}-${version}-Portable-${arch}.${ext}"
