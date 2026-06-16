@@ -1581,6 +1581,21 @@ function App() {
 
   return (
     <main className="app">
+      <div className="launch-screen" aria-hidden="true">
+        <div className="launch-orbit">
+          <span />
+          <span />
+          <span />
+        </div>
+        <div className="launch-core">
+          <Bot size={30} />
+        </div>
+        <div className="launch-copy">
+          <strong>Trade Inquiry AI</strong>
+          <span>Risk scoring · Mail automation · Quotation desk</span>
+        </div>
+        <div className="launch-bar" />
+      </div>
       <div className="app-layout">
         <aside className="sidebar">
           <div className="sidebar-brand">
