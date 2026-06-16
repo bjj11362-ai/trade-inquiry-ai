@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -41,6 +41,42 @@ test('settings can be saved to a fresh data directory', async () => {
     assert.equal(saved.ai.hasApiKey, true);
     assert.equal(saved.mailAccounts[0].imap.pass, 'imap****code');
     assert.equal(getPublicSettings().mailAccounts[0].smtp.pass, 'smtp****code');
+  } finally {
+    if (previousDataDir === undefined) delete process.env.TRADE_AI_DATA_DIR;
+    else process.env.TRADE_AI_DATA_DIR = previousDataDir;
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('settings reader tolerates UTF-8 BOM files', async () => {
+  const previousDataDir = process.env.TRADE_AI_DATA_DIR;
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'trade-ai-settings-bom-'));
+  process.env.TRADE_AI_DATA_DIR = dataDir;
+
+  try {
+    await writeFile(
+      path.join(dataDir, 'settings.json'),
+      `\uFEFF${JSON.stringify({
+        ai: { provider: 'deepseek', apiKey: 'sk-test-bom', model: 'deepseek-chat' },
+        mailAccounts: [
+          {
+            id: 'qq-sales',
+            label: 'QQ Mail',
+            imap: { host: 'imap.qq.com', user: 'sales@qq.com', pass: 'secret' },
+            smtp: { host: 'smtp.qq.com', user: 'sales@qq.com', pass: 'secret' }
+          }
+        ]
+      })}`,
+      'utf8'
+    );
+
+    const moduleUrl = `${pathToFileURL(path.resolve('server/settingsStore.js')).href}?case=bom-${Date.now()}`;
+    const { getPublicSettings } = await import(moduleUrl);
+    const settings = getPublicSettings();
+
+    assert.equal(settings.ai.hasApiKey, true);
+    assert.equal(settings.mailAccounts.length, 1);
+    assert.equal(settings.mailAccounts[0].imap.user, 'sales@qq.com');
   } finally {
     if (previousDataDir === undefined) delete process.env.TRADE_AI_DATA_DIR;
     else process.env.TRADE_AI_DATA_DIR = previousDataDir;

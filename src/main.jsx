@@ -1934,9 +1934,26 @@ function App() {
                 <Field label="显示名称" value={settingsDraft.mailAccounts[mailEditorIndex].label || ''} onChange={(value) => updateMailAccount(mailEditorIndex, ['label'], value)} placeholder="QQ Sales / Gmail Sales" />
                 <Field label="邮箱地址" value={settingsDraft.mailAccounts[mailEditorIndex].imap?.user || ''} onChange={(value) => {
                   const account = settingsDraft.mailAccounts[mailEditorIndex];
-                  updateMailAccount(mailEditorIndex, ['imap', 'user'], value);
-                  updateMailAccount(mailEditorIndex, ['smtp', 'user'], account.smtp?.user || value);
-                  updateMailAccount(mailEditorIndex, ['smtp', 'from'], account.smtp?.from || value);
+                  const previousUser = account.imap?.user || '';
+                  const currentSmtpUser = account.smtp?.user || '';
+                  const currentFrom = account.smtp?.from || '';
+                  const shouldUpdateFrom = !currentFrom || currentFrom === previousUser || currentFrom === currentSmtpUser;
+                  setSettingsDraft((current) => ({
+                    ...current,
+                    mailAccounts: current.mailAccounts.map((mailAccount, accountIndex) => (
+                      accountIndex === mailEditorIndex
+                        ? {
+                            ...mailAccount,
+                            imap: { ...(mailAccount.imap || {}), user: value },
+                            smtp: {
+                              ...(mailAccount.smtp || {}),
+                              user: value,
+                              from: shouldUpdateFrom ? value : mailAccount.smtp?.from
+                            }
+                          }
+                        : mailAccount
+                    ))
+                  }));
                 }} placeholder="sales@example.com" />
                 <Field label="发件人显示" value={settingsDraft.mailAccounts[mailEditorIndex].smtp?.from || ''} onChange={(value) => updateMailAccount(mailEditorIndex, ['smtp', 'from'], value)} placeholder="Sales Team <sales@example.com>" />
                 <Field label="轮询秒数" value={String(settingsDraft.mailAccounts[mailEditorIndex].pollIntervalSeconds || 15)} onChange={(value) => updateMailAccount(mailEditorIndex, ['pollIntervalSeconds'], value)} placeholder="15" />

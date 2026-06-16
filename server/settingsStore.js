@@ -44,7 +44,7 @@ function envMailAccounts() {
 
 function readSettingsFile() {
   try {
-    return JSON.parse(readFileSync(settingsFile, 'utf8'));
+    return JSON.parse(readFileSync(settingsFile, 'utf8').replace(/^\uFEFF/, ''));
   } catch {
     return {};
   }

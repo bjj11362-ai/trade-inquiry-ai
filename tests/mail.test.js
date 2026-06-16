@@ -355,7 +355,7 @@ test('mail host aliases are normalized to provider servers', () => {
       id: 'qq-sales',
       label: 'QQ',
       imap: { host: 'QQ', user: 'sales@qq.com', pass: 'secret' },
-      smtp: { host: 'qq.com', user: 'sales@qq.com', pass: 'secret' }
+      smtp: { host: 'qq.com', user: '2', pass: 'secret' }
     },
     {
       id: 'gmail-sales',
@@ -370,6 +370,7 @@ test('mail host aliases are normalized to provider servers', () => {
 
   assert.equal(accounts[0].imap.host, 'imap.qq.com');
   assert.equal(accounts[0].smtp.host, 'smtp.qq.com');
+  assert.equal(accounts[0].smtp.user, 'sales@qq.com');
   assert.equal(accounts[1].imap.host, 'imap.gmail.com');
   assert.equal(accounts[1].smtp.host, 'smtp.gmail.com');
 });

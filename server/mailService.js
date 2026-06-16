@@ -53,6 +53,13 @@ function normalizeMailHost(host = '', kind = 'imap') {
   return providerHosts[key]?.[kind] || raw;
 }
 
+function normalizeMailAuthUser(value = '', fallback = '') {
+  const raw = String(value || '').trim();
+  if (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(raw)) return raw;
+  const match = raw.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || '';
+  return match || String(fallback || '').trim();
+}
+
 async function acquireSyncLock() {
   await mkdir(path.dirname(syncLockFile), { recursive: true });
   try {
@@ -96,7 +103,7 @@ export function getMailConfig() {
       host: normalizeMailHost(process.env.MAIL_SMTP_HOST || '', 'smtp'),
       port: smtpPort,
       secure: boolFromEnv(process.env.MAIL_SMTP_SECURE, smtpPort === 465),
-      user: process.env.MAIL_SMTP_USER || '',
+      user: normalizeMailAuthUser(process.env.MAIL_SMTP_USER || '', process.env.MAIL_IMAP_USER || ''),
       pass: process.env.MAIL_SMTP_PASSWORD || '',
       from: process.env.MAIL_FROM || process.env.MAIL_SMTP_USER || ''
     },
@@ -109,7 +116,7 @@ export function getMailConfig() {
 function normalizeAccountConfig(account = {}, index = 0) {
   const imapPort = numberFromEnv(account.imap?.port ?? account.imapPort, 993);
   const smtpPort = numberFromEnv(account.smtp?.port ?? account.smtpPort, 465);
-  const user = account.imap?.user || account.imapUser || account.user || '';
+  const user = normalizeMailAuthUser(account.imap?.user || account.imapUser || account.user || '');
   return {
     id: String(account.id || account.accountId || user || `mailbox-${index + 1}`).trim(),
     label: account.label || account.name || user || `Mailbox ${index + 1}`,
@@ -125,7 +132,7 @@ function normalizeAccountConfig(account = {}, index = 0) {
       host: normalizeMailHost(account.smtp?.host || account.smtpHost || '', 'smtp'),
       port: smtpPort,
       secure: boolFromEnv(account.smtp?.secure ?? account.smtpSecure, smtpPort === 465),
-      user: account.smtp?.user || account.smtpUser || user,
+      user: normalizeMailAuthUser(account.smtp?.user || account.smtpUser || '', user),
       pass: account.smtp?.pass || account.smtp?.password || account.smtpPassword || account.password || '',
       from: account.smtp?.from || account.from || account.smtpUser || user
     },
