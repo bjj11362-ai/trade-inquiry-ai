@@ -40,7 +40,8 @@
     "asar": true,
     "asarUnpack": [
       "server/**/*",
-      "dist/**/*"
+      "dist/**/*",
+      "node_modules/**/*"
     ],
     "win": {
       "target": [
