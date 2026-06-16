@@ -33,6 +33,26 @@ function numberFromEnv(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function normalizeMailHost(host = '', kind = 'imap') {
+  const raw = String(host || '').trim();
+  const key = raw.toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  const providerHosts = {
+    qq: { imap: 'imap.qq.com', smtp: 'smtp.qq.com' },
+    'qq.com': { imap: 'imap.qq.com', smtp: 'smtp.qq.com' },
+    gmail: { imap: 'imap.gmail.com', smtp: 'smtp.gmail.com' },
+    'gmail.com': { imap: 'imap.gmail.com', smtp: 'smtp.gmail.com' },
+    tencent: { imap: 'imap.exmail.qq.com', smtp: 'smtp.exmail.qq.com' },
+    exmail: { imap: 'imap.exmail.qq.com', smtp: 'smtp.exmail.qq.com' },
+    'exmail.qq.com': { imap: 'imap.exmail.qq.com', smtp: 'smtp.exmail.qq.com' },
+    aliyun: { imap: 'imap.qiye.aliyun.com', smtp: 'smtp.qiye.aliyun.com' },
+    'qiye.aliyun.com': { imap: 'imap.qiye.aliyun.com', smtp: 'smtp.qiye.aliyun.com' },
+    '163': { imap: 'imap.163.com', smtp: 'smtp.163.com' },
+    '163.com': { imap: 'imap.163.com', smtp: 'smtp.163.com' },
+    netease: { imap: 'imap.163.com', smtp: 'smtp.163.com' }
+  };
+  return providerHosts[key]?.[kind] || raw;
+}
+
 async function acquireSyncLock() {
   await mkdir(path.dirname(syncLockFile), { recursive: true });
   try {
@@ -66,14 +86,14 @@ export function getMailConfig() {
     label: process.env.MAIL_ACCOUNT_LABEL || process.env.MAIL_IMAP_USER || 'Default mailbox',
     pollIntervalSeconds: numberFromEnv(process.env.MAIL_POLL_INTERVAL_SECONDS, DEFAULT_MAIL_POLL_INTERVAL_SECONDS),
     imap: {
-      host: process.env.MAIL_IMAP_HOST || '',
+      host: normalizeMailHost(process.env.MAIL_IMAP_HOST || '', 'imap'),
       port: imapPort,
       secure: boolFromEnv(process.env.MAIL_IMAP_SECURE, imapPort === 993),
       user: process.env.MAIL_IMAP_USER || '',
       pass: process.env.MAIL_IMAP_PASSWORD || ''
     },
     smtp: {
-      host: process.env.MAIL_SMTP_HOST || '',
+      host: normalizeMailHost(process.env.MAIL_SMTP_HOST || '', 'smtp'),
       port: smtpPort,
       secure: boolFromEnv(process.env.MAIL_SMTP_SECURE, smtpPort === 465),
       user: process.env.MAIL_SMTP_USER || '',
@@ -95,14 +115,14 @@ function normalizeAccountConfig(account = {}, index = 0) {
     label: account.label || account.name || user || `Mailbox ${index + 1}`,
     pollIntervalSeconds: numberFromEnv(account.pollIntervalSeconds, numberFromEnv(process.env.MAIL_POLL_INTERVAL_SECONDS, DEFAULT_MAIL_POLL_INTERVAL_SECONDS)),
     imap: {
-      host: account.imap?.host || account.imapHost || '',
+      host: normalizeMailHost(account.imap?.host || account.imapHost || '', 'imap'),
       port: imapPort,
       secure: boolFromEnv(account.imap?.secure ?? account.imapSecure, imapPort === 993),
       user,
       pass: account.imap?.pass || account.imap?.password || account.imapPassword || account.password || ''
     },
     smtp: {
-      host: account.smtp?.host || account.smtpHost || '',
+      host: normalizeMailHost(account.smtp?.host || account.smtpHost || '', 'smtp'),
       port: smtpPort,
       secure: boolFromEnv(account.smtp?.secure ?? account.smtpSecure, smtpPort === 465),
       user: account.smtp?.user || account.smtpUser || user,
@@ -194,7 +214,7 @@ function describeNetworkError(error, service = 'mail') {
     return `${service} connection timed out. Check network access to the mail server and try again.`;
   }
   if (/ENOTFOUND|EAI_AGAIN|getaddrinfo/i.test(message)) {
-    return `${service} DNS lookup failed. Check the mail server host name.`;
+    return `${service} DNS lookup failed. Check the mail server host name. QQ mail should use IMAP imap.qq.com:993 SSL and SMTP smtp.qq.com:465 SSL.`;
   }
   if (/ECONNREFUSED/i.test(message)) {
     return `${service} connection refused. Check host, port, and SSL setting.`;
@@ -203,6 +223,13 @@ function describeNetworkError(error, service = 'mail') {
     return `${service} network request failed. Check network connectivity and provider availability.`;
   }
   return code ? `${service} error (${code}): ${message}` : `${service} error: ${message}`;
+}
+
+function connectionLabel(config, kind) {
+  const mailConfig = config?.[kind] || {};
+  const host = mailConfig.host || '';
+  const port = mailConfig.port || '';
+  return `${config.label || config.id} ${kind.toUpperCase()} (${host}${port ? `:${port}` : ''})`;
 }
 
 async function withMailTimeout(operation, label) {
@@ -1573,11 +1600,11 @@ export async function testMailConnection() {
     } else {
       const client = createImapClient(config);
       try {
-        await withMailTimeout(client.connect(), `${config.label || config.id} IMAP login`);
+        await withMailTimeout(client.connect(), `${connectionLabel(config, 'imap')} login`);
         await client.logout();
         result.imap = { ok: true, message: 'IMAP login succeeded.' };
       } catch (error) {
-        result.imap.message = describeNetworkError(error, `${config.label || config.id} IMAP`);
+        result.imap.message = describeNetworkError(error, connectionLabel(config, 'imap'));
       }
     }
 
@@ -1585,10 +1612,10 @@ export async function testMailConnection() {
       result.smtp.message = 'SMTP is not configured.';
     } else {
       try {
-        await withMailTimeout(createTransport(config).verify(), `${config.label || config.id} SMTP login`);
+        await withMailTimeout(createTransport(config).verify(), `${connectionLabel(config, 'smtp')} login`);
         result.smtp = { ok: true, message: 'SMTP login succeeded.' };
       } catch (error) {
-        result.smtp.message = describeNetworkError(error, `${config.label || config.id} SMTP`);
+        result.smtp.message = describeNetworkError(error, connectionLabel(config, 'smtp'));
       }
     }
 

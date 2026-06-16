@@ -348,6 +348,32 @@ test('multi-mailbox env config parses account list', () => {
   assert.equal(accounts[1].smtp.host, 'smtp.gmail.com');
 });
 
+test('mail host aliases are normalized to provider servers', () => {
+  const previous = process.env.MAIL_ACCOUNTS_JSON;
+  process.env.MAIL_ACCOUNTS_JSON = JSON.stringify([
+    {
+      id: 'qq-sales',
+      label: 'QQ',
+      imap: { host: 'QQ', user: 'sales@qq.com', pass: 'secret' },
+      smtp: { host: 'qq.com', user: 'sales@qq.com', pass: 'secret' }
+    },
+    {
+      id: 'gmail-sales',
+      label: 'Gmail',
+      imap: { host: 'gmail', user: 'sales@gmail.com', pass: 'secret' },
+      smtp: { host: 'gmail.com', user: 'sales@gmail.com', pass: 'secret' }
+    }
+  ]);
+  const accounts = getMailAccounts();
+  if (previous === undefined) delete process.env.MAIL_ACCOUNTS_JSON;
+  else process.env.MAIL_ACCOUNTS_JSON = previous;
+
+  assert.equal(accounts[0].imap.host, 'imap.qq.com');
+  assert.equal(accounts[0].smtp.host, 'smtp.qq.com');
+  assert.equal(accounts[1].imap.host, 'imap.gmail.com');
+  assert.equal(accounts[1].smtp.host, 'smtp.gmail.com');
+});
+
 test('non-business platform notifications are filtered before AI analysis', () => {
   assert.equal(isNonBusinessNoiseMail({
     from: '"Steam" <noreply@steampowered.com>',
