@@ -1,5 +1,6 @@
 const { app, BrowserWindow, Menu, shell, dialog, ipcMain } = require('electron');
 const { spawn } = require('node:child_process');
+const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
@@ -11,6 +12,21 @@ let mainWindow;
 let serverProcess;
 let ownsServer = false;
 let lastServerError = '';
+
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+}
+
+function writeStartupLog(message) {
+  try {
+    const logPath = path.join(app.getPath('userData'), 'startup.log');
+    const line = `[${new Date().toISOString()}] ${message}\n`;
+    fs.appendFileSync(logPath, line, 'utf8');
+  } catch {
+    // Logging must never prevent the app from starting.
+  }
+}
 
 function setApiPort(port) {
   apiPort = port;
@@ -32,7 +48,7 @@ function requestHealth(port = apiPort, timeout = 800) {
         }
         try {
           const parsed = JSON.parse(body);
-          resolve(parsed && parsed.ok === true);
+          resolve(parsed && parsed.ok === true && (!parsed.service || parsed.service === 'trade-inquiry-ai'));
         } catch {
           resolve(false);
         }
@@ -59,8 +75,14 @@ function canListen(port) {
 
 async function chooseApiPort() {
   for (let port = START_PORT; port < START_PORT + 40; port += 1) {
-    if (await requestHealth(port, 450)) return port;
-    if (await canListen(port)) return port;
+    if (await requestHealth(port, 450)) {
+      writeStartupLog(`Reusing existing local API on port ${port}.`);
+      return port;
+    }
+    if (await canListen(port)) {
+      writeStartupLog(`Selected local API port ${port}.`);
+      return port;
+    }
   }
   throw new Error(`No available local API port found from ${START_PORT} to ${START_PORT + 39}.`);
 }
@@ -90,6 +112,7 @@ async function ensureServer() {
   const appRoot = resolveAppRoot();
   const serverEntry = resolveServerEntry();
   const dataDir = path.join(app.getPath('userData'), '.data');
+  writeStartupLog(`Starting API. packaged=${app.isPackaged} entry=${serverEntry} dataDir=${dataDir}`);
 
   serverProcess = spawn(process.execPath, [serverEntry], {
     cwd: app.isPackaged ? path.dirname(serverEntry) : appRoot,
@@ -107,10 +130,17 @@ async function ensureServer() {
   if (serverProcess.stderr) {
     serverProcess.stderr.on('data', (chunk) => {
       lastServerError = String(chunk).slice(-1200);
+      writeStartupLog(`API stderr: ${lastServerError}`);
     });
   }
 
+  serverProcess.on('error', (error) => {
+    lastServerError = error.message || String(error);
+    writeStartupLog(`API process error: ${lastServerError}`);
+  });
+
   serverProcess.on('exit', (code) => {
+    writeStartupLog(`API process exited with code ${code}.`);
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('desktop:server-exit', code);
     }
@@ -195,28 +225,40 @@ function installMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-ipcMain.handle('app:get-version', () => app.getVersion());
+if (gotTheLock) {
+  ipcMain.handle('app:get-version', () => app.getVersion());
 
-app.whenReady()
-  .then(async () => {
-    installMenu();
-    await ensureServer();
-    createWindow();
-  })
-  .catch((error) => {
-    dialog.showErrorBox(
-      'Startup failed',
-      `${error.message}\n\nPlease close other Trade Inquiry AI windows and try again. If the problem continues, restart Windows once.`
-    );
+  app.whenReady()
+    .then(async () => {
+      app.setAppUserModelId('com.tradeinquiry.ai.desktop');
+      writeStartupLog(`App starting. version=${app.getVersion()} electron=${process.versions.electron} chrome=${process.versions.chrome}`);
+      installMenu();
+      await ensureServer();
+      createWindow();
+    })
+    .catch((error) => {
+      writeStartupLog(`Startup failed: ${error.stack || error.message || String(error)}`);
+      dialog.showErrorBox(
+        'Startup failed',
+        `${error.message}\n\nPlease close other Trade Inquiry AI windows and try again. If the problem continues, restart Windows once.`
+      );
+      app.quit();
+    });
+
+  app.on('window-all-closed', () => {
     app.quit();
   });
 
-app.on('window-all-closed', () => {
-  app.quit();
-});
+  app.on('second-instance', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
 
-app.on('before-quit', () => {
-  if (ownsServer && serverProcess && !serverProcess.killed) {
-    serverProcess.kill();
-  }
-});
+  app.on('before-quit', () => {
+    if (ownsServer && serverProcess && !serverProcess.killed) {
+      serverProcess.kill();
+    }
+  });
+}

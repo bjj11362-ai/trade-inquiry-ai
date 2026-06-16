@@ -68,6 +68,7 @@ app.get('/api/health', (_req, res) => {
   const aiSettings = getAISettings();
   res.json({
     ok: true,
+    service: 'trade-inquiry-ai',
     hasKey: Boolean(aiSettings.apiKey),
     model: aiSettings.model,
     mailWorker: mailWorkerState
